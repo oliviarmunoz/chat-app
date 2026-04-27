@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chat App Writeup</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <h1>Chat App Writeup (What, Where, and Who)</h1>
+    <section>
+      <h2>Action 1: Create a Public Thread</h2>
+      <p>
+        <strong>What?</strong>: Create a new thread with a specific title (the
+        topic). This is represented as a Graffiti Object with the following
+        value:
+      </p>
+      <pre>
+        <code>
+        {
+          "activity": "Create",
+          "type": "Thread",
+          "title": title, // chosen by user
+          "classId": classId, // based on MIT course number (e.g. 6.4500)
+          "channel": crypto.randomUUID(),
+          "published": Date.now()
+        }
+        </code>
+      </pre>
+
+      <p>
+        <strong>Where?</strong> New threads should be discoverable by anyone in
+        the class so we use the hardcoded name associated with the class (e.g.
+        "mit:class:6.4500") so people can query it and discover new threads.
+      </p>
+
+      <p>
+        <strong>Who?</strong> Anyone in the class can see all the messages in a
+        public thread, so there is no allowed list.
+      </p>
+    </section>
+
+    <section>
+      <h2>Action 2: Create a Private Thread</h2>
+      <p>
+        <strong>What?</strong>: Create a new thread and share it with specific
+        individuals. This is represented as a Graffiti Object with the following
+        value:
+      </p>
+      <pre>
+        <code>
+        {
+          "activity": "Create",
+          "type": "Thread",
+          "channel": crypto.randomUUID(),
+          "published": Date.now()
+        }
+        </code>
+      </pre>
+
+      <p>
+        <strong>Where?</strong> Private threads should only be discoverable by
+        the users that have access to it, so it appears in each allowed users'
+        inbox.
+      </p>
+
+      <p>
+        <strong>Who?</strong> Allowed list contains the members' identifiers.
+      </p>
+    </section>
+
+    <section>
+      <h2>Action 3: Send a Message</h2>
+      <p>
+        <strong>What?</strong>: Send a message into a specific thread. This is
+        represented as a Graffiti Object with the following value:
+      </p>
+      <pre>
+        <code>
+        {
+          "content": content, // chosen by user, 
+          "published": Date.now() 
+        }
+        </code>
+      </pre>
+
+      <p>
+        <strong>Where?</strong> Messages should exist in the thread they are
+        sent in. This channel is created with crypto.randomUUID() and
+        persisted/shared in the the "Create Public/Private Thread" object.
+      </p>
+
+      <p>
+        <strong>Who?</strong> For private threads, only users in the allowed
+        list. For public threads no allowed list.
+      </p>
+    </section>
+  </body>
+</html>
