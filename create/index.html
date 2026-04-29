@@ -1,0 +1,53 @@
+<main class="main">
+  <div class="form-card">
+    <label class="field">
+      <span>privacy settings:</span>
+      <select v-model="newPrivacy">
+        <option value="everyone">share with everyone (public)</option>
+        <option value="private">invite-only (private)</option>
+      </select>
+    </label>
+    <label v-if="newPrivacy === 'everyone'" class="field">
+      <span>topic:</span>
+      <input
+        v-model="newTopic"
+        type="text"
+        placeholder="set a topic for the thread"
+      />
+    </label>
+    <label v-if="newPrivacy === 'private'" class="field">
+      <span>invite handles:</span>
+      <textarea
+        v-model="newInvites"
+        rows="3"
+        placeholder="graffiti handles, one per line or comma-separated"
+      ></textarea>
+      <span class="field-hint"
+        >only you and invitees can see or post in this thread.</span
+      >
+    </label>
+    <p v-if="createThreadError" class="create-error">{{ createThreadError }}</p>
+    <label class="field">
+      <span>message (optional):</span>
+      <textarea
+        v-model="newOptionalMessage"
+        placeholder="send the first message in the thread"
+      ></textarea>
+    </label>
+  </div>
+  <div class="form-actions">
+    <button
+      type="button"
+      class="btn primary"
+      :disabled="
+        creating ||
+        (newPrivacy === 'everyone' && !newTopic.trim()) ||
+        (newPrivacy === 'private' && !newInvites.trim())
+      "
+      @click="createThread"
+    >
+      {{ creating ? "creating..." : "create thread" }}
+    </button>
+    <button type="button" class="btn danger" @click="goHome">cancel</button>
+  </div>
+</main>

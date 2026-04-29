@@ -1,0 +1,131 @@
+<main class="main thread-main">
+  <p v-if="timelineLoading"><em>loading messages...</em></p>
+  <div v-else class="thread-panel">
+    <button
+      type="button"
+      class="btn small danger"
+      :disabled="leaving.has(activeThreadChannel)"
+      @click="leaveCurrentThread"
+    >
+      {{ leaving.has(activeThreadChannel) ? "..." : "leave thread" }}
+    </button>
+    <div class="thread-topic-row">
+      <p class="thread-topic-line">
+        <strong>topic:</strong> {{ activeThreadTitle }}
+        <span v-if="activeThreadAllowed?.length" class="badge-private"
+          >private thread</span
+        >
+      </p>
+    </div>
+    <ul class="timeline">
+      <li
+        v-for="item in timeline"
+        :key="item.url"
+        :class="
+          item.kind === 'join' || item.kind === 'leave' ? 'sys' : 'msg'
+        "
+      >
+        <template v-if="item.kind === 'join'">
+          &lt; —-
+          <actor-name
+            :actor="item.actor"
+            :is-me="isMe(item.actor)"
+            :display-name="myDisplayName"
+            link-profile
+            @open-profile="goProfileForActor"
+          ></actor-name>
+          joined the thread! -— &gt;
+        </template>
+        <template v-else-if="item.kind === 'leave'">
+          &lt; —- {{ myDisplayName }} has left the thread! -— &gt;
+        </template>
+        <template v-else>
+          <div class="msg-row">
+            <span
+              v-if="ownMessagePendingDelete(item)"
+              class="msg-body msg-body--pending-delete"
+            >
+              <span class="msg-deleted-note">you deleted this message.</span>
+              <span class="msg-delete-undo-row">
+                <button
+                  type="button"
+                  class="btn small msg-delete-undo"
+                  @click="undoOwnMessageDelete(item)"
+                >
+                  undo
+                </button>
+                <span
+                  class="msg-delete-countdown"
+                  :aria-label="
+                    ownMessageDeleteSecondsLeft(item) +
+                    ' seconds until permanent delete'
+                  "
+                  >{{ ownMessageDeleteSecondsLeft(item) }}s</span
+                >
+              </span>
+            </span>
+            <span
+              v-else-if="isMe(item.actor) && deletingMessages.has(item.url)"
+              class="msg-body msg-body--pending-delete"
+            >
+              <span class="msg-deleted-note">deleting...</span>
+            </span>
+            <span v-else class="msg-body">
+              <actor-name
+                :actor="item.actor"
+                :is-me="isMe(item.actor)"
+                :display-name="myDisplayName"
+                bold
+                link-profile
+                @open-profile="goProfileForActor"
+              ></actor-name
+              >: {{ item.value.content }}
+            </span>
+            <button
+              v-if="
+                isMe(item.actor) &&
+                !ownMessagePendingDelete(item) &&
+                !deletingMessages.has(item.url)
+              "
+              type="button"
+              class="btn small danger msg-delete msg-delete-icon"
+              :disabled="deletingMessages.has(item.url)"
+              aria-label="Delete message"
+              @click="deleteOwnMessage(item)"
+            >
+              <span
+                v-if="deletingMessages.has(item.url)"
+                class="msg-delete-loading"
+                aria-hidden="true"
+                >deleting ...</span
+              >
+              <img
+                v-else
+                src="images/delete.png"
+                alt=""
+                class="msg-delete__pic"
+                width="28"
+                height="28"
+              />
+            </button>
+          </div>
+        </template>
+      </li>
+    </ul>
+    <form class="compose" @submit.prevent="sendMessage">
+      <input
+        v-model="draft"
+        type="text"
+        placeholder="write a message..."
+        :disabled="sending"
+      />
+      <button
+        type="submit"
+        class="btn primary"
+        :disabled="!draft.trim() || sending"
+      >
+        {{ sending ? "sending..." : "send" }}
+      </button>
+    </form>
+  </div>
+</main>

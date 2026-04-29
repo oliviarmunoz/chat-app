@@ -1,0 +1,53 @@
+<main class="main">
+  <p v-if="threadsLoading"><em>loading threads...</em></p>
+  <template v-else>
+    <section class="band">
+      <h2>welcome, {{myDisplayName}}!</h2>
+      <h2>threads</h2>
+      <p v-if="!threads.length" class="muted">no threads yet.</p>
+      <ul v-else class="cards">
+        <li v-for="t in threads" :key="t.url" class="card">
+          <div class="card-body">
+            <div class="topic">
+              {{ t.value.title }}
+              <span v-if="isPrivateThread(t)" class="badge-private"
+                >private thread</span
+              >
+            </div>
+            <div class="meta">
+              <span class="owner-label">owner:</span>
+              <actor-name
+                :actor="t.actor"
+                :is-me="isMe(t.actor)"
+                :display-name="myDisplayName"
+              ></actor-name>
+            </div>
+            <p v-if="t.value.snippet" class="preview">
+              “{{ t.value.snippet }}”
+            </p>
+          </div>
+          <div class="card-actions">
+            <template v-if="joinedSet.has(t.value.channel)">
+              <button
+                type="button"
+                class="btn small primary"
+                @click="openThread(t)"
+              >
+                open
+              </button>
+            </template>
+            <button
+              v-else
+              type="button"
+              class="btn small"
+              :disabled="joining.has(t.value.channel)"
+              @click="joinThread(t)"
+            >
+              {{ joining.has(t.value.channel) ? "..." : "join" }}
+            </button>
+          </div>
+        </li>
+      </ul>
+    </section>
+  </template>
+</main>

@@ -1,13 +1,14 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>6.4500 class — threads</title>
+    <title>class threads</title>
     <script type="importmap">
       {
         "imports": {
           "vue": "https://cdn.jsdelivr.net/npm/vue@3.5.32/dist/vue.esm-browser.js",
+          "vue-router": "https://cdn.jsdelivr.net/npm/vue-router@4.5.1/dist/vue-router.esm-browser.prod.js",
           "@graffiti-garden/implementation-local": "https://cdn.jsdelivr.net/npm/@graffiti-garden/implementation-local@1.2.0/dist/browser/index.js",
           "@graffiti-garden/implementation-decentralized": "https://cdn.jsdelivr.net/npm/@graffiti-garden/implementation-decentralized@0.0.9/dist/browser/index.js",
           "@graffiti-garden/wrapper-vue": "https://cdn.jsdelivr.net/npm/@graffiti-garden/wrapper-vue@1.2.2/dist/browser/plugin.mjs"
@@ -18,14 +19,17 @@
     <link rel="stylesheet" href="app.css" />
   </head>
   <body>
-    <div id="app">Loading…</div>
-    <template id="template">
-      <div class="shell" v-if="!$graffitiSession.value">
+    <div id="app">loading...</div>
+    <template id="shell-template">
+      <div
+        class="shell"
+        v-if="routeName === 'login' || !$graffitiSession.value"
+      >
         <p class="muted">
-          Log in to see threads for <strong>6.4500 class</strong>.
+          login to see threads for <strong>6.4500 threads</strong>.
         </p>
         <button type="button" class="btn primary" @click="$graffiti.login()">
-          Log in
+          login
         </button>
       </div>
 
@@ -38,13 +42,19 @@
                 class="linkish top-logout"
                 @click="$graffiti.logout($graffitiSession.value)"
               >
-                Log out
+                logout
+              </button>
+              <button type="button" class="linkish" @click="goProfile">
+                my profile
               </button>
             </div>
             <div class="top-title">
-              <h1>6.4500 class</h1>
+              <h1>6.4500 threads</h1>
               <p v-if="view === 'home'" class="sub"></p>
               <p v-else-if="view === 'create'" class="sub">create new thread</p>
+              <p v-else-if="view === 'profile'" class="sub">
+                {{myDisplayName}} profile
+              </p>
               <p v-else-if="view === 'thread'" class="sub"></p>
             </div>
             <div class="top-right">
@@ -52,7 +62,7 @@
                 v-if="view === 'home'"
                 type="button"
                 class="icon-btn plus"
-                @click="view = 'create'"
+                @click="goCreate"
                 aria-label="New thread"
               >
                 +
@@ -75,244 +85,7 @@
             </div>
           </div>
         </header>
-
-        <!-- Home -->
-        <main v-if="view === 'home'" class="main">
-          <p v-if="threadsLoading"><em>Loading threads…</em></p>
-          <template v-else>
-            <section class="band">
-              <h2>&lt;-- unread threads --&gt;</h2>
-              <p v-if="!unreadThreads.length" class="muted">
-                No unread threads!
-              </p>
-              <ul class="cards">
-                <li v-for="t in unreadThreads" :key="t.url" class="card">
-                  <div class="card-body">
-                    <div class="topic">
-                      Topic: {{ t.value.title }}
-                      <span v-if="isPrivateThread(t)" class="badge-private"
-                        >private</span
-                      >
-                    </div>
-                    <div class="meta">
-                      <span class="owner-label">Owner:</span>
-                      <template v-if="isMe(t.actor)"
-                        >{{ myDisplayName }}</template
-                      >
-                      <graffiti-actor-to-handle v-else :actor="t.actor" />
-                    </div>
-                    <p v-if="t.value.snippet" class="preview">
-                      Preview: “{{ t.value.snippet }}”
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    class="btn small"
-                    :disabled="joining.has(t.value.channel)"
-                    @click="joinThread(t)"
-                  >
-                    {{ joining.has(t.value.channel) ? "…" : "join" }}
-                  </button>
-                </li>
-              </ul>
-            </section>
-
-            <section class="band">
-              <h2>&lt;-- read threads --&gt;</h2>
-              <p v-if="!readThreads.length" class="muted">No read threads!</p>
-              <ul class="cards">
-                <li v-for="t in readThreads" :key="t.url" class="card">
-                  <div class="card-body">
-                    <div class="topic">
-                      {{ t.value.title }}
-                      <span v-if="isPrivateThread(t)" class="badge-private"
-                        >private</span
-                      >
-                    </div>
-                    <div class="meta">
-                      <span class="owner-label">Owner:</span>
-                      <template v-if="isMe(t.actor)"
-                        >{{ myDisplayName }}</template
-                      >
-                      <graffiti-actor-to-handle v-else :actor="t.actor" />
-                    </div>
-                    <p v-if="t.value.snippet" class="preview">
-                      “{{ t.value.snippet }}”
-                    </p>
-                  </div>
-                  <div class="card-actions">
-                    <button
-                      type="button"
-                      class="btn small primary"
-                      @click="openThread(t)"
-                    >
-                      open
-                    </button>
-                  </div>
-                </li>
-              </ul>
-            </section>
-          </template>
-        </main>
-
-        <!-- Create -->
-        <main v-else-if="view === 'create'" class="main">
-          <div class="form-card">
-            <label v-if="newPrivacy === 'everyone'" class="field">
-              <span>Topic:</span>
-              <input
-                v-model="newTopic"
-                type="text"
-                placeholder="Enter topic name here..."
-              />
-            </label>
-            <label class="field">
-              <span>Privacy settings:</span>
-              <select v-model="newPrivacy">
-                <option value="everyone">share with everyone</option>
-                <option value="private">invite-only (private)</option>
-              </select>
-            </label>
-            <label v-if="newPrivacy === 'private'" class="field">
-              <span>Invite handles:</span>
-              <textarea
-                v-model="newInvites"
-                rows="3"
-                placeholder="Handles, one per line or comma-separated"
-              ></textarea>
-              <span class="field-hint"
-                >Only you and invitees can see or post in this thread.</span
-              >
-            </label>
-            <p v-if="createThreadError" class="create-error">
-              {{ createThreadError }}
-            </p>
-            <label class="field">
-              <span>Message (optional):</span>
-              <textarea
-                v-model="newOptionalMessage"
-                rows="4"
-                placeholder="Enter message here..."
-              ></textarea>
-            </label>
-          </div>
-          <div class="form-actions">
-            <button
-              type="button"
-              class="btn primary"
-              :disabled="
-                creating ||
-                (newPrivacy === 'everyone' && !newTopic.trim()) ||
-                (newPrivacy === 'private' && !newInvites.trim())
-              "
-              @click="createThread"
-            >
-              {{ creating ? "Creating…" : "create thread" }}
-            </button>
-            <button type="button" class="btn muted-btn" @click="goHome">
-              cancel
-            </button>
-          </div>
-        </main>
-
-        <!-- Thread -->
-        <main v-else-if="view === 'thread'" class="main thread-main">
-          <p v-if="timelineLoading"><em>Loading messages...</em></p>
-          <div v-else class="thread-panel">
-            <button
-              type="button"
-              class="btn small danger"
-              :disabled="leaving.has(activeThreadChannel)"
-              @click="leaveCurrentThread"
-            >
-              {{ leaving.has(activeThreadChannel) ? "…" : "Leave thread" }}
-            </button>
-            <div class="thread-topic-row">
-              <p class="thread-topic-line">
-                <strong>Topic:</strong> {{ activeThreadTitle }}
-                <span v-if="activeThreadAllowed?.length" class="badge-private"
-                  >private</span
-                >
-              </p>
-            </div>
-            <ul class="timeline">
-              <li
-                v-for="item in timeline"
-                :key="item.url"
-                :class="
-                  item.kind === 'join' || item.kind === 'leave' ? 'sys' : 'msg'
-                "
-              >
-                <template v-if="item.kind === 'join'">
-                  &lt; —-
-                  <template v-if="isMe(item.actor)"
-                    >{{ myDisplayName }}</template
-                  >
-                  joined the thread! -— &gt;
-                </template>
-                <template v-else-if="item.kind === 'leave'">
-                  &lt; —-
-                  <template v-if="isMe(item.actor)"
-                    >{{ myDisplayName }}</template
-                  >
-                  has left the thread! -— &gt;
-                </template>
-                <template v-else>
-                  <div class="msg-row">
-                    <span class="msg-body">
-                      <template v-if="isMe(item.actor)">
-                        <strong>{{ myDisplayName }}</strong>: {{
-                        item.value.content }}
-                      </template>
-                      <template v-else>
-                        <graffiti-actor-to-handle :actor="item.actor" />: {{
-                        item.value.content }}
-                      </template>
-                    </span>
-                    <button
-                      v-if="isMe(item.actor)"
-                      type="button"
-                      class="btn small danger msg-delete msg-delete-icon"
-                      :disabled="deletingMessages.has(item.url)"
-                      aria-label="Delete message"
-                      @click="deleteOwnMessage(item)"
-                    >
-                      <span
-                        v-if="deletingMessages.has(item.url)"
-                        class="msg-delete-loading"
-                        aria-hidden="true"
-                        >…</span
-                      >
-                      <img
-                        v-else
-                        src="images/delete.png"
-                        alt=""
-                        class="msg-delete__pic"
-                        width="28"
-                        height="28"
-                      />
-                    </button>
-                  </div>
-                </template>
-              </li>
-            </ul>
-            <form class="compose" @submit.prevent="sendMessage">
-              <input
-                v-model="draft"
-                type="text"
-                placeholder="Write a message..."
-                :disabled="sending"
-              />
-              <button
-                type="submit"
-                class="btn primary"
-                :disabled="!draft.trim() || sending"
-              >
-                {{ sending ? "Sending..." : "Send" }}
-              </button>
-            </form>
-          </div>
-        </main>
+        <router-view />
       </div>
     </template>
   </body>
