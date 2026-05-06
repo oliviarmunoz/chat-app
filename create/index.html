@@ -14,14 +14,14 @@
             </button>
           </span>
           <span class="field-tip__bubble">
-            <strong>Public</strong> — Shown in the class thread list with your topic. Anyone in the class can open it and post.<br /><br />
-            <strong>Private</strong> — Not shown in the class thread list. Only you and the people you invite can see or post; others will not see this thread.
+            <strong>public</strong> — shown in the class thread list with your topic. anyone in the class can open it and post.<br /><br />
+            <strong>private</strong> — not shown in the class thread list. only you and the people you invite can see or post; others will not see this thread.
           </span>
         </div>
       </div>
       <select v-model="newPrivacy">
-        <option value="everyone">Public</option>
-        <option value="private">Private</option>
+        <option value="everyone">public</option>
+        <option value="private">private</option>
       </select>
     </label>
     <label v-if="newPrivacy === 'everyone'" class="field">

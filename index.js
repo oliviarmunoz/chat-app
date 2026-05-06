@@ -16,6 +16,8 @@ const AppShell = {
 
 const loadHome = () =>
   import("./home/index.js").then((m) => m.default());
+const loadMyThreads = () =>
+  import("./my-threads/index.js").then((m) => m.default());
 const loadCreate = () =>
   import("./create/index.js").then((m) => m.default());
 const loadProfile = () =>
@@ -37,6 +39,11 @@ const router = createRouter({
       children: [
         { path: "login", name: "login", component: loginPlaceholder },
         { path: "", name: "home", component: loadHome },
+        {
+          path: "my-threads",
+          name: "myThreads",
+          component: loadMyThreads,
+        },
         { path: "create", name: "create", component: loadCreate },
         { path: "profile", name: "profile", component: loadProfile },
         {

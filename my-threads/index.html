@@ -7,19 +7,18 @@
     loading threads<span class="app-loading__dots" aria-hidden="true"><span class="app-loading__dot">.</span><span class="app-loading__dot">.</span><span class="app-loading__dot">.</span></span>
   </p>
   <template v-else>
-    <section class="band band--browse">
-      <h2>welcome, {{myDisplayName}}!</h2>
-      <p v-if="!unjoinedThreads.length" class="muted">
-        <template v-if="!allThreads.length">no threads yet.</template>
+    <section class="band band--mine">
+      <p v-if="!joinedThreads.length" class="muted">
+        <template v-if="!allThreads.length">no class threads yet.</template>
         <template v-else>
-          you've joined every class thread.
-          <button type="button" class="linkish" @click="goMyThreads">
-            my threads
+          you haven't joined any threads.
+          <button type="button" class="linkish" @click="goHome">
+            browse class threads
           </button>
         </template>
       </p>
-      <ul v-else class="cards cards--browse">
-        <li v-for="t in unjoinedThreads" :key="t.url" class="card card--browse">
+      <ul v-else class="cards cards--mine">
+        <li v-for="t in joinedThreads" :key="t.url" class="card card--mine">
           <div class="card-body">
             <div class="topic">
               {{ threadTopicDisplay(t) }}
@@ -44,17 +43,22 @@
             </p>
           </div>
           <div class="card-actions">
-            <button
-              type="button"
-              class="btn small"
-              :disabled="joining.has(t.value.channel)"
-              @click="joinThread(t)"
-            >
-              {{ joining.has(t.value.channel) ? "..." : "join" }}
+            <button type="button" class="btn small primary" @click="openThread(t)">
+              open
             </button>
           </div>
         </li>
       </ul>
+    </section>
+    <section v-if="unjoinedThreads.length" class="band band--browse-reminder">
+      <h2>more in the class</h2>
+      <p class="muted band--browse-reminder__text">
+        {{ unjoinedThreads.length }} thread{{
+          unjoinedThreads.length !== 1 ? "s" : ""
+        }}
+        you haven't joined —
+        <button type="button" class="linkish" @click="goHome">browse</button>
+      </p>
     </section>
   </template>
 </main>

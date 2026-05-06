@@ -7,21 +7,35 @@
     loading messages<span class="app-loading__dots" aria-hidden="true"><span class="app-loading__dot">.</span><span class="app-loading__dot">.</span><span class="app-loading__dot">.</span></span>
   </p>
   <div v-else class="thread-panel">
-    <button
-      type="button"
-      class="btn small danger"
-      :disabled="leaving.has(activeThreadChannel)"
-      @click="leaveCurrentThread"
-    >
-      {{ leaving.has(activeThreadChannel) ? "..." : "leave thread" }}
-    </button>
-    <div class="thread-topic-row">
-      <p class="thread-topic-line">
-        <strong>topic:</strong> {{ activeThreadTitle }}
-        <span v-if="activeThreadAllowed?.length" class="badge-private"
-          >private thread</span
-        >
-      </p>
+    <div class="thread-actions">
+      <button
+        v-if="isActiveThreadOwner"
+        type="button"
+        class="btn small danger"
+        :disabled="
+          deletingThread.has(activeThreadChannel) ||
+          leaving.has(activeThreadChannel)
+        "
+        @click="openDeleteThreadDialog"
+      >
+        {{
+          deletingThread.has(activeThreadChannel)
+            ? "..."
+            : "delete thread"
+        }}
+      </button>
+      <button
+        v-else
+        type="button"
+        class="btn small danger"
+        :disabled="
+          leaving.has(activeThreadChannel) ||
+          deletingThread.has(activeThreadChannel)
+        "
+        @click="leaveCurrentThread"
+      >
+        {{ leaving.has(activeThreadChannel) ? "..." : "leave thread" }}
+      </button>
     </div>
     <ul class="timeline">
       <li
@@ -133,5 +147,48 @@
         {{ sending ? "sending..." : "send" }}
       </button>
     </form>
+  </div>
+  <div
+    v-if="deleteThreadConfirmOpen"
+    class="confirm-backdrop"
+    role="presentation"
+    @click.self="cancelDeleteThreadDialog"
+  >
+    <div
+      class="confirm-dialog form-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-delete-thread-title"
+      aria-describedby="confirm-delete-thread-desc"
+    >
+      <p id="confirm-delete-thread-title" class="confirm-dialog__title">
+        delete thread?
+      </p>
+      <p id="confirm-delete-thread-desc" class="muted confirm-dialog__hint">
+        this removes the thread for everyone and cannot be undone.
+      </p>
+      <div class="form-actions confirm-dialog__actions">
+        <button
+          type="button"
+          class="btn muted-btn"
+          :disabled="deletingThread.has(activeThreadChannel)"
+          @click="cancelDeleteThreadDialog"
+        >
+          cancel
+        </button>
+        <button
+          type="button"
+          class="btn danger"
+          :disabled="deletingThread.has(activeThreadChannel)"
+          @click="confirmDeleteThreadAsOwner"
+        >
+          {{
+            deletingThread.has(activeThreadChannel)
+              ? "deleting..."
+              : "delete"
+          }}
+        </button>
+      </div>
+    </div>
   </div>
 </main>

@@ -144,6 +144,30 @@ export function useClassApp() {
   const routeName = computed(() => (route.name ? String(route.name) : ""));
   const myDisplayName = ref("");
 
+  /** Graffiti handle (or short actor label); does not write localStorage. */
+  async function refreshMyDisplayNameFromActor() {
+    const s = session.value;
+    if (!s) {
+      myDisplayName.value = "";
+      return;
+    }
+    const aid = actorId(s.actor);
+    try {
+      const h = await graffiti.actorToHandle(s.actor);
+      if (!session.value || actorId(session.value.actor) !== aid) return;
+      if (h != null && String(h).trim()) {
+        const raw = String(h).trim();
+        myDisplayName.value = stripGraffitiActorSuffix(raw) || raw;
+        return;
+      }
+    } catch {
+      if (!session.value || actorId(session.value.actor) !== aid) return;
+    }
+    if (session.value && actorId(session.value.actor) === aid) {
+      myDisplayName.value = shortActorLabel(aid);
+    }
+  }
+
   watch(
     () => (session.value ? actorId(session.value.actor) : ""),
     async (aid) => {
@@ -157,39 +181,26 @@ export function useClassApp() {
         myDisplayName.value = stripGraffitiActorSuffix(saved) || saved;
         return;
       }
-      const s = session.value;
-      if (!s || actorId(s.actor) !== aid) return;
-      try {
-        const h = await graffiti.actorToHandle(s.actor);
-        if (!session.value || actorId(session.value.actor) !== aid) return;
-        if (h != null && String(h).trim()) {
-          const raw = String(h).trim();
-          const name = stripGraffitiActorSuffix(raw) || raw;
-          myDisplayName.value = name;
-          localStorage.setItem(key, name);
-          return;
-        }
-      } catch {
-        if (!session.value || actorId(session.value.actor) !== aid) return;
-      }
-      // Shown until Graffiti resolves a handle; not persisted so the next load
-      // can retry actorToHandle. Saving still happens when you blur the field.
-      myDisplayName.value = shortActorLabel(aid);
+      await refreshMyDisplayNameFromActor();
     },
     { immediate: true },
   );
 
+  /** Saves a custom name to localStorage, or clears it and restores the Graffiti default. */
   function persistMyDisplayName() {
     const s = session.value;
     if (!s) return;
     const aid = actorId(s.actor);
     const key = displayNameStorageKey(aid);
     const raw = myDisplayName.value.trim();
+    if (!raw) {
+      localStorage.removeItem(key);
+      void refreshMyDisplayNameFromActor();
+      return;
+    }
     const v = stripGraffitiActorSuffix(raw) || raw;
-    if (v) {
-      myDisplayName.value = v;
-      localStorage.setItem(key, v);
-    } else localStorage.removeItem(key);
+    myDisplayName.value = v;
+    localStorage.setItem(key, v);
   }
 
   function isMe(actor) {
@@ -239,8 +250,82 @@ export function useClassApp() {
     ),
   );
 
+  const joinedThreads = computed(() =>
+    sortedThreads.value.filter((t) => joinedSet.value.has(t.value.channel)),
+  );
+
+  const unjoinedThreads = computed(() =>
+    sortedThreads.value.filter((t) => !joinedSet.value.has(t.value.channel)),
+  );
+
+  /** Channels for all class threads so we can show the latest message as the card preview. */
+  const threadListPreviewChannels = computed(() =>
+    sortedThreads.value.map((t) => t.value.channel).filter(Boolean),
+  );
+
+  const { objects: threadListPreviewMessages } = useGraffitiDiscover(
+    threadListPreviewChannels,
+    messageObject,
+    session,
+    true,
+  );
+
+  const lastMessagePreviewByChannel = computed(() => {
+    const map = new Map();
+    for (const o of threadListPreviewMessages.value) {
+      const content = o.value?.content;
+      const pub = Number(o.value?.published) || 0;
+      if (typeof content !== "string" || !content.trim()) continue;
+      const assign = (ch) => {
+        const prev = map.get(ch);
+        if (!prev || pub > prev.published) {
+          map.set(ch, { text: content.trim(), published: pub });
+        }
+      };
+      const chs = o.channels;
+      if (Array.isArray(chs) && chs.length) {
+        for (const ch of chs) assign(ch);
+      }
+    }
+    return map;
+  });
+
+  function previewTextForThread(t) {
+    const ch = t?.value?.channel;
+    if (!ch) return "";
+    return lastMessagePreviewByChannel.value.get(ch)?.text ?? "";
+  }
+
   function isPrivateThread(t) {
     return t?.value?.privacy === "private";
+  }
+
+  /** Human-readable topic for cards and header; private threads name invitees. */
+  function threadTopicDisplay(t) {
+    if (!t?.value) return "";
+    if (!isPrivateThread(t)) return t.value.title ?? "";
+    const stored = (t.value.title ?? "").trim();
+    if (stored && stored !== "private thread") return stored;
+    const ids = allowedListFromThread(t);
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return stored || "private thread";
+    }
+    const me = session.value ? actorId(session.value.actor) : "";
+    let others = ids.filter((id) => id && id !== me);
+    if (others.length === 0) others = ids.filter(Boolean);
+    const labels = others.map((id) => shortActorLabel(id)).filter(Boolean);
+    if (!labels.length) return stored || "private thread";
+    return `private thread with ${labels.join(", ")}`;
+  }
+
+  /** Title stored on new private threads from invite textarea (handles as typed). */
+  function privateThreadTitleFromInviteParts(parts) {
+    const labels = parts
+      .map((s) => String(s).trim().replace(/^@/, ""))
+      .map((s) => stripGraffitiActorSuffix(s) || s)
+      .filter(Boolean);
+    if (!labels.length) return "private thread";
+    return `private thread with ${labels.join(", ")}`;
   }
 
   const view = ref("home");
@@ -248,6 +333,16 @@ export function useClassApp() {
   const activeThreadTitle = ref("");
   /** Graffiti `allowed` list for the open thread (private); null for public. */
   const activeThreadAllowed = ref(null);
+
+  const deletingThread = ref(new Set());
+  const deleteThreadConfirmOpen = ref(false);
+
+  const isActiveThreadOwner = computed(() => {
+    const ch = activeThreadChannel.value;
+    if (!ch || !session.value) return false;
+    const t = sortedThreads.value.find((x) => x.value.channel === ch);
+    return !!(t && isMe(t.actor));
+  });
 
   function clearActiveThread() {
     activeThreadChannel.value = "";
@@ -262,6 +357,13 @@ export function useClassApp() {
       if (s && name === "login") router.replace({ name: "home" });
     },
     { immediate: true },
+  );
+
+  watch(
+    () => route.name,
+    (name) => {
+      if (name !== "chat") deleteThreadConfirmOpen.value = false;
+    },
   );
 
   const profilePeerActorId = ref("");
@@ -288,6 +390,11 @@ export function useClassApp() {
         clearActiveThread();
         return;
       }
+      if (name === "myThreads") {
+        view.value = "myThreads";
+        clearActiveThread();
+        return;
+      }
       if (name === "create") {
         view.value = "create";
         clearActiveThread();
@@ -303,7 +410,7 @@ export function useClassApp() {
           typeof rawChatId === "string" ? decodeURIComponent(rawChatId) : "";
         activeThreadChannel.value = ch;
         const t = sortedThreads.value.find((x) => x.value.channel === ch);
-        activeThreadTitle.value = t?.value?.title ?? "";
+        activeThreadTitle.value = t ? threadTopicDisplay(t) : "";
         const list = allowedListFromThread(t);
         activeThreadAllowed.value =
           Array.isArray(list) && list.length ? [...list] : null;
@@ -464,6 +571,9 @@ export function useClassApp() {
   // routing functions
   function goHome() {
     router.push({ name: "home" });
+  }
+  function goMyThreads() {
+    router.push({ name: "myThreads" });
   }
   function goCreate() {
     router.push({ name: "create" });
@@ -678,6 +788,40 @@ export function useClassApp() {
     await leaveThreadByChannel(ch, t);
   }
 
+  function openDeleteThreadDialog() {
+    deleteThreadConfirmOpen.value = true;
+  }
+
+  function cancelDeleteThreadDialog() {
+    deleteThreadConfirmOpen.value = false;
+  }
+
+  /** Owner removes the thread Create object so it disappears from the class list for everyone. */
+  async function confirmDeleteThreadAsOwner() {
+    const ch = activeThreadChannel.value;
+    const s = session.value;
+    if (!ch || !s) return;
+    const t = sortedThreads.value.find((x) => x.value.channel === ch);
+    if (!t || !isMe(t.actor)) return;
+
+    deletingThread.value = new Set(deletingThread.value).add(ch);
+    try {
+      const allowed = allowedForChannel(ch) ?? activeThreadAllowed.value;
+      await postPublicLeaveAnnouncement(ch, allowed);
+      const privObj = joinObjectByChannel.value.get(ch);
+      if (privObj) await graffiti.delete(privObj, s);
+      await graffiti.delete(t, s);
+      deleteThreadConfirmOpen.value = false;
+      goHome();
+    } catch (e) {
+      console.warn("Could not delete thread", e);
+    } finally {
+      const next = new Set(deletingThread.value);
+      next.delete(ch);
+      deletingThread.value = next;
+    }
+  }
+
   function undoOwnMessageDelete(item) {
     if (item.kind !== "message" || !isMe(item.actor)) return;
     const id = pendingDeleteTimers.get(item.url);
@@ -746,7 +890,9 @@ export function useClassApp() {
 
     creating.value = true;
     try {
-      const titleText = isPrivate ? "Private thread" : newTopic.value.trim();
+      const titleText = isPrivate
+        ? privateThreadTitleFromInviteParts(inviteParts)
+        : newTopic.value.trim();
       const optionalText = newOptionalMessage.value.trim();
       const threadChannel = crypto.randomUUID();
 
@@ -851,7 +997,17 @@ export function useClassApp() {
       const threadChannel = crypto.randomUUID();
       const peerId = peerActorIdStr.trim();
       const allowedActorIds = [me, peerId].filter(Boolean);
-      const titleText = "Private thread";
+      let peerLabel = shortActorLabel(peerId);
+      try {
+        const h = await graffiti.actorToHandle(peerId);
+        if (h != null && String(h).trim()) {
+          const raw = String(h).trim();
+          peerLabel = stripGraffitiActorSuffix(raw) || raw;
+        }
+      } catch {
+        /* keep peerLabel */
+      }
+      const titleText = `private thread with ${peerLabel}`;
       const createValue = {
         activity: "Create",
         type: "Thread",
@@ -918,8 +1074,13 @@ export function useClassApp() {
     isMe,
     threadsLoading,
     threads: sortedThreads,
+    allThreads: sortedThreads,
+    joinedThreads,
+    unjoinedThreads,
+    previewTextForThread,
     joinedSet,
     isPrivateThread,
+    threadTopicDisplay,
     newTopic,
     newPrivacy,
     newInvites,
@@ -928,6 +1089,8 @@ export function useClassApp() {
     creating,
     joining,
     leaving,
+    deletingThread,
+    isActiveThreadOwner,
     deletingMessages,
     ownMessagePendingDelete,
     ownMessageDeleteSecondsLeft,
@@ -935,10 +1098,15 @@ export function useClassApp() {
     joinThread,
     leaveThread,
     leaveCurrentThread,
+    deleteThreadConfirmOpen,
+    openDeleteThreadDialog,
+    cancelDeleteThreadDialog,
+    confirmDeleteThreadAsOwner,
     deleteOwnMessage,
     openThread,
     createThread,
     goCreate,
+    goMyThreads,
     goProfile,
     goProfileForActor,
     createPrivateThreadWithPeer,

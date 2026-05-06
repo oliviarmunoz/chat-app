@@ -1,4 +1,11 @@
-import { defineComponent, ref, computed, watch, inject } from "vue";
+import {
+  defineComponent,
+  ref,
+  computed,
+  watch,
+  inject,
+  onBeforeUnmount,
+} from "vue";
 import { useRouter } from "vue-router";
 import {
   useGraffiti,
@@ -138,6 +145,23 @@ export const ProfileView = defineComponent({
     const openToAnswerQuestions = ref(false);
     const saveInProgress = ref(false);
     const saveError = ref("");
+    const saveSuccess = ref(false);
+    let saveSuccessClearTimer = null;
+
+    onBeforeUnmount(() => {
+      if (saveSuccessClearTimer != null) clearTimeout(saveSuccessClearTimer);
+    });
+
+    /** Edited locally; applied to the app only when "save profile" succeeds. */
+    const displayNameDraft = ref("");
+
+    watch(
+      () => classApp?.myDisplayName?.value,
+      (v) => {
+        displayNameDraft.value = v ?? "";
+      },
+      { immediate: true },
+    );
 
     watch(
       myLatestProfile,
@@ -184,6 +208,11 @@ export const ProfileView = defineComponent({
       if (!s) return;
       saveInProgress.value = true;
       saveError.value = "";
+      saveSuccess.value = false;
+      if (saveSuccessClearTimer != null) {
+        clearTimeout(saveSuccessClearTimer);
+        saveSuccessClearTimer = null;
+      }
       try {
         await graffiti.post(
           {
@@ -200,6 +229,15 @@ export const ProfileView = defineComponent({
           },
           s
         );
+        if (classApp?.myDisplayName && classApp.persistMyDisplayName) {
+          classApp.myDisplayName.value = displayNameDraft.value;
+          classApp.persistMyDisplayName();
+        }
+        saveSuccess.value = true;
+        saveSuccessClearTimer = setTimeout(() => {
+          saveSuccess.value = false;
+          saveSuccessClearTimer = null;
+        }, 2800);
       } catch (e) {
         saveError.value = e instanceof Error ? e.message : String(e);
       } finally {
@@ -209,12 +247,14 @@ export const ProfileView = defineComponent({
 
     return {
       profilesLoading,
+      displayNameDraft,
       availability,
       openToStudyTogether,
       openToAnswerQuestions,
       saveProfile,
       saveInProgress,
       saveError,
+      saveSuccess,
       classmateRows,
       isViewingClassmate,
       peerLatestProfile,
@@ -261,6 +301,15 @@ export const ProfileView = defineComponent({
       <template v-else>
         <div class="form-card">
           <label class="field">
+            <span>display name</span>
+            <input
+              type="text"
+              v-model="displayNameDraft"
+              autocomplete="nickname"
+              placeholder="your Graffiti handle"
+            />
+          </label>
+          <label class="field">
             <span>availability</span>
             <textarea
               v-model="availability"
@@ -280,6 +329,13 @@ export const ProfileView = defineComponent({
             </label>
           </div>
           <p v-if="saveError" class="create-error">{{ saveError }}</p>
+          <p
+            v-else-if="saveSuccess"
+            class="profile-save-success"
+            role="status"
+          >
+            profile saved successfully
+          </p>
           <div class="form-actions profile-save-row">
             <button
               type="button"
