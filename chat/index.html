@@ -1,5 +1,11 @@
 <main class="main thread-main">
-  <p v-if="timelineLoading"><em>loading messages...</em></p>
+  <p
+    v-if="timelineLoading"
+    class="muted messages-loading"
+    aria-busy="true"
+  >
+    loading messages<span class="app-loading__dots" aria-hidden="true"><span class="app-loading__dot">.</span><span class="app-loading__dot">.</span><span class="app-loading__dot">.</span></span>
+  </p>
   <div v-else class="thread-panel">
     <button
       type="button"

@@ -1,10 +1,27 @@
 <main class="main">
   <div class="form-card">
-    <label class="field">
-      <span>privacy settings:</span>
+    <label class="field privacy-field">
+      <div class="privacy-field__row">
+        <div class="privacy-field__label-row">
+          <span class="field-label-with-tip">privacy settings</span>
+          <span class="field-tip">
+            <button
+              type="button"
+              class="field-tip__btn"
+              aria-label="Privacy: Public threads are listed for the whole class—choose a topic and anyone can join and post. Private threads are only visible to you and the Graffiti handles you invite; only those people can see or post."
+            >
+              ?
+            </button>
+          </span>
+          <span class="field-tip__bubble">
+            <strong>Public</strong> — Shown in the class thread list with your topic. Anyone in the class can open it and post.<br /><br />
+            <strong>Private</strong> — Not shown in the class thread list. Only you and the people you invite can see or post; others will not see this thread.
+          </span>
+        </div>
+      </div>
       <select v-model="newPrivacy">
-        <option value="everyone">share with everyone (public)</option>
-        <option value="private">invite-only (private)</option>
+        <option value="everyone">Public</option>
+        <option value="private">Private</option>
       </select>
     </label>
     <label v-if="newPrivacy === 'everyone'" class="field">
@@ -22,9 +39,6 @@
         rows="3"
         placeholder="graffiti handles, one per line or comma-separated"
       ></textarea>
-      <span class="field-hint"
-        >only you and invitees can see or post in this thread.</span
-      >
     </label>
     <p v-if="createThreadError" class="create-error">{{ createThreadError }}</p>
     <label class="field">

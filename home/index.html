@@ -1,5 +1,11 @@
 <main class="main">
-  <p v-if="threadsLoading"><em>loading threads...</em></p>
+  <p
+    v-if="threadsLoading"
+    class="muted threads-loading"
+    aria-busy="true"
+  >
+    loading threads<span class="app-loading__dots" aria-hidden="true"><span class="app-loading__dot">.</span><span class="app-loading__dot">.</span><span class="app-loading__dot">.</span></span>
+  </p>
   <template v-else>
     <section class="band">
       <h2>welcome, {{myDisplayName}}!</h2>

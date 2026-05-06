@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -19,7 +19,11 @@
     <link rel="stylesheet" href="app.css" />
   </head>
   <body>
-    <div id="app">loading...</div>
+    <div id="app">
+      <p class="app-loading" aria-busy="true">
+        loading<span class="app-loading__dots" aria-hidden="true"><span class="app-loading__dot">.</span><span class="app-loading__dot">.</span><span class="app-loading__dot">.</span></span>
+      </p>
+    </div>
     <template id="shell-template">
       <div
         class="shell"
