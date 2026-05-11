@@ -274,6 +274,9 @@ export function useClassApp() {
     sortedThreads.value.filter((t) => !joinedSet.value.has(t.value.channel)),
   );
 
+  /** Set early so thread-card preview discover can omit the open chat channel. */
+  const activeThreadChannel = ref("");
+
   /**
    * Stable channel list for card previews: only changes when the *set* of thread
    * channels changes (avoids rediscover / flicker when `sortedThreads` gets a new
@@ -287,18 +290,21 @@ export function useClassApp() {
     return ids.join("\0");
   }
 
-  const threadListPreviewChannelsRef = shallowRef([]);
-
-  watch(
-    () => threadPreviewChannelSetKey(sortedThreads.value),
-    (key) => {
-      threadListPreviewChannelsRef.value = key ? key.split("\0") : [];
-    },
-    { immediate: true },
-  );
+  /**
+   * Channels for thread-card previews only. Excludes the thread open in chat so
+   * that channel is subscribed once (message discover with autopoll), avoiding
+   * merged updates that re-render the timeline when only preview data churns.
+   */
+  const threadListPreviewChannelIds = computed(() => {
+    const key = threadPreviewChannelSetKey(sortedThreads.value);
+    const channels = key ? key.split("\0") : [];
+    const active = activeThreadChannel.value;
+    if (!active) return channels;
+    return channels.filter((c) => c !== active);
+  });
 
   const { objects: threadListPreviewMessages } = useGraffitiDiscover(
-    () => threadListPreviewChannelsRef.value,
+    () => threadListPreviewChannelIds.value,
     messageObject,
     session,
     false,
@@ -329,18 +335,43 @@ export function useClassApp() {
 
   function syncPreviewTextsFromMessages(messages) {
     const next = buildLatestPreviewMap(messages);
+    const active = activeThreadChannel.value;
+    const stillListed = new Set(
+      sortedThreads.value.map((t) => t.value?.channel).filter(Boolean),
+    );
     for (const ch of Object.keys(previewTextByChannel)) {
-      if (!next.has(ch)) delete previewTextByChannel[ch];
+      if (!next.has(ch)) {
+        if (ch === active) continue;
+        // Discover often goes empty briefly when the channel set changes (e.g. after
+        // opening a new public thread). Keep prior preview until the thread is gone.
+        if (stillListed.has(ch)) continue;
+        delete previewTextByChannel[ch];
+      }
     }
     for (const [ch, { text }] of next) {
       if (previewTextByChannel[ch] !== text) previewTextByChannel[ch] = text;
     }
   }
 
+  /** Only changes when a channel’s latest preview line (text + time) actually changes. */
+  function previewTextsSyncKey(messages) {
+    const map = buildLatestPreviewMap(messages);
+    const entries = [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    return entries
+      .map(([ch, { text, published }]) => `${ch}\x1f${published}\x1f${text}`)
+      .join("\x1e");
+  }
+
+  const threadListPreviewTextsKey = computed(() =>
+    previewTextsSyncKey(threadListPreviewMessages.value),
+  );
+
   watch(
-    threadListPreviewMessages,
-    (objects) => syncPreviewTextsFromMessages(objects),
-    { deep: true, immediate: true, flush: "post" },
+    threadListPreviewTextsKey,
+    () => {
+      syncPreviewTextsFromMessages(threadListPreviewMessages.value);
+    },
+    { immediate: true, flush: "post" },
   );
 
   function previewTextForThread(t) {
@@ -382,10 +413,14 @@ export function useClassApp() {
   }
 
   const view = ref("myThreads");
-  const activeThreadChannel = ref("");
   const activeThreadTitle = ref("");
   /** Graffiti `allowed` list for the open thread (private); null for public. */
   const activeThreadAllowed = ref(null);
+  /**
+   * Thread object until it appears in class discover (e.g. right after create).
+   * Avoids empty header / allowed flicker before `threadCreates` catches up.
+   */
+  const pendingOpenThread = shallowRef(null);
 
   const deletingThread = ref(new Set());
   const deleteThreadConfirmOpen = ref(false);
@@ -401,6 +436,34 @@ export function useClassApp() {
     activeThreadChannel.value = "";
     activeThreadTitle.value = "";
     activeThreadAllowed.value = null;
+    pendingOpenThread.value = null;
+  }
+
+  function syncActiveChatShell(ch) {
+    if (!ch) return;
+    const tDiscovered = sortedThreads.value.find((x) => x.value.channel === ch);
+    if (
+      tDiscovered &&
+      pendingOpenThread.value &&
+      pendingOpenThread.value.value?.channel === ch
+    ) {
+      pendingOpenThread.value = null;
+    }
+    const t =
+      tDiscovered ??
+      (pendingOpenThread.value?.value?.channel === ch
+        ? pendingOpenThread.value
+        : null);
+    const nextTitle = t ? threadTopicDisplay(t) : "";
+    if (activeThreadTitle.value !== nextTitle) {
+      activeThreadTitle.value = nextTitle;
+    }
+    const list = allowedListFromThread(t);
+    const nextAllowed =
+      Array.isArray(list) && list.length ? [...list] : null;
+    if (!sameActorIdList(activeThreadAllowed.value, nextAllowed)) {
+      activeThreadAllowed.value = nextAllowed;
+    }
   }
 
   // If the user logs in while on /login, send them to my threads.
@@ -458,7 +521,7 @@ export function useClassApp() {
   });
 
   watch(
-    [routeName, () => route.params.chatId, sortedThreads],
+    [routeName, () => route.params.chatId],
     ([name, rawChatId]) => {
       if (name === "classThreads") {
         view.value = "classThreads";
@@ -483,22 +546,8 @@ export function useClassApp() {
       if (name === "chat") {
         const ch =
           typeof rawChatId === "string" ? decodeURIComponent(rawChatId) : "";
-        const chChanged = activeThreadChannel.value !== ch;
         activeThreadChannel.value = ch;
-        const t = sortedThreads.value.find((x) => x.value.channel === ch);
-        const nextTitle = t ? threadTopicDisplay(t) : "";
-        if (chChanged || activeThreadTitle.value !== nextTitle) {
-          activeThreadTitle.value = nextTitle;
-        }
-        const list = allowedListFromThread(t);
-        const nextAllowed =
-          Array.isArray(list) && list.length ? [...list] : null;
-        if (
-          chChanged ||
-          !sameActorIdList(activeThreadAllowed.value, nextAllowed)
-        ) {
-          activeThreadAllowed.value = nextAllowed;
-        }
+        syncActiveChatShell(ch);
         view.value = "thread";
         return;
       }
@@ -506,6 +555,19 @@ export function useClassApp() {
       clearActiveThread();
     },
     { immediate: true },
+  );
+
+  watch(
+    sortedThreads,
+    () => {
+      if (route.name !== "chat") return;
+      const raw = route.params.chatId;
+      const ch =
+        typeof raw === "string" ? decodeURIComponent(raw) : "";
+      if (!ch || ch !== activeThreadChannel.value) return;
+      syncActiveChatShell(ch);
+    },
+    { flush: "post" },
   );
 
   // async flags
@@ -772,9 +834,13 @@ export function useClassApp() {
   }
 
   function openThread(t) {
+    if (!t?.value?.channel) return;
+    const ch = t.value.channel;
+    const listed = sortedThreads.value.some((x) => x.value.channel === ch);
+    pendingOpenThread.value = listed ? null : t;
     router.push({
       name: "chat",
-      params: { chatId: encodeURIComponent(t.value.channel) },
+      params: { chatId: encodeURIComponent(ch) },
     });
   }
 
