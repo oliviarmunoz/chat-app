@@ -1,14 +1,21 @@
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, shallowRef, reactive } from "vue";
 import {
   useGraffiti,
   useGraffitiSession,
   useGraffitiDiscover,
 } from "@graffiti-garden/wrapper-vue";
 import { useRoute, useRouter } from "vue-router";
+import {
+  MEMBER_PROFILE_CHANNEL,
+  memberProfileDiscoverSchema,
+} from "./profile-discover.js";
 
 // for the first iteration, you can only access one class (6.4500)
 const CLASS_CHANNEL = "mit:class:6.4500";
 const CLASS_ID = "6.4500";
+
+/** Max length for public thread topic when creating (HTML maxlength + create path). */
+const THREAD_TOPIC_MAX_CHARS = 100;
 
 const threadCreateObject = {
   properties: {
@@ -95,6 +102,15 @@ function allowedListFromThread(t) {
   const raw = t.value?.invitedActors;
   if (Array.isArray(raw) && raw.length) return raw;
   return undefined;
+}
+
+function sameActorIdList(a, b) {
+  if (a == null && b == null) return true;
+  if (a == null || b == null || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 function displayNameStorageKey(aid) {
@@ -258,21 +274,42 @@ export function useClassApp() {
     sortedThreads.value.filter((t) => !joinedSet.value.has(t.value.channel)),
   );
 
-  /** Channels for all class threads so we can show the latest message as the card preview. */
-  const threadListPreviewChannels = computed(() =>
-    sortedThreads.value.map((t) => t.value.channel).filter(Boolean),
+  /**
+   * Stable channel list for card previews: only changes when the *set* of thread
+   * channels changes (avoids rediscover / flicker when `sortedThreads` gets a new
+   * array reference). Autopoll off — local posts still show up per Graffiti; class
+   * list uses its own discover poll.
+   */
+  function threadPreviewChannelSetKey(threads) {
+    const ids = [
+      ...new Set(threads.map((t) => t.value?.channel).filter(Boolean)),
+    ].sort();
+    return ids.join("\0");
+  }
+
+  const threadListPreviewChannelsRef = shallowRef([]);
+
+  watch(
+    () => threadPreviewChannelSetKey(sortedThreads.value),
+    (key) => {
+      threadListPreviewChannelsRef.value = key ? key.split("\0") : [];
+    },
+    { immediate: true },
   );
 
   const { objects: threadListPreviewMessages } = useGraffitiDiscover(
-    threadListPreviewChannels,
+    () => threadListPreviewChannelsRef.value,
     messageObject,
     session,
-    true,
+    false,
   );
 
-  const lastMessagePreviewByChannel = computed(() => {
+  /** channel id → latest preview text; keyed reactive so unchanged channels stay stable. */
+  const previewTextByChannel = reactive({});
+
+  function buildLatestPreviewMap(messages) {
     const map = new Map();
-    for (const o of threadListPreviewMessages.value) {
+    for (const o of messages) {
       const content = o.value?.content;
       const pub = Number(o.value?.published) || 0;
       if (typeof content !== "string" || !content.trim()) continue;
@@ -288,12 +325,28 @@ export function useClassApp() {
       }
     }
     return map;
-  });
+  }
+
+  function syncPreviewTextsFromMessages(messages) {
+    const next = buildLatestPreviewMap(messages);
+    for (const ch of Object.keys(previewTextByChannel)) {
+      if (!next.has(ch)) delete previewTextByChannel[ch];
+    }
+    for (const [ch, { text }] of next) {
+      if (previewTextByChannel[ch] !== text) previewTextByChannel[ch] = text;
+    }
+  }
+
+  watch(
+    threadListPreviewMessages,
+    (objects) => syncPreviewTextsFromMessages(objects),
+    { deep: true, immediate: true, flush: "post" },
+  );
 
   function previewTextForThread(t) {
     const ch = t?.value?.channel;
     if (!ch) return "";
-    return lastMessagePreviewByChannel.value.get(ch)?.text ?? "";
+    return previewTextByChannel[ch] ?? "";
   }
 
   function isPrivateThread(t) {
@@ -328,7 +381,7 @@ export function useClassApp() {
     return `private thread with ${labels.join(", ")}`;
   }
 
-  const view = ref("home");
+  const view = ref("myThreads");
   const activeThreadChannel = ref("");
   const activeThreadTitle = ref("");
   /** Graffiti `allowed` list for the open thread (private); null for public. */
@@ -350,11 +403,11 @@ export function useClassApp() {
     activeThreadAllowed.value = null;
   }
 
-  // If the user logs in while on /login, send them home.
+  // If the user logs in while on /login, send them to my threads.
   watch(
     [routeName, () => session.value],
     ([name, s]) => {
-      if (s && name === "login") router.replace({ name: "home" });
+      if (s && name === "login") router.replace({ name: "myThreads" });
     },
     { immediate: true },
   );
@@ -382,11 +435,33 @@ export function useClassApp() {
     return "my profile";
   });
 
+  /** Shell header line under “6.4500 threads” on profile routes. */
+  const profileShellTitle = computed(() => {
+    if (route.name === "profileUser") {
+      const u = route.params.username;
+      let slug = "";
+      if (typeof u === "string") {
+        try {
+          slug = decodeURIComponent(u).trim();
+        } catch {
+          slug = u.trim();
+        }
+      }
+      if (slug) return `${slug} profile`;
+      return "classmate profile";
+    }
+    if (route.name === "profile") {
+      const n = (myDisplayName.value || "").trim();
+      return n ? `${n} profile` : "my profile";
+    }
+    return "";
+  });
+
   watch(
     [routeName, () => route.params.chatId, sortedThreads],
     ([name, rawChatId]) => {
-      if (name === "home") {
-        view.value = "home";
+      if (name === "classThreads") {
+        view.value = "classThreads";
         clearActiveThread();
         return;
       }
@@ -408,16 +483,26 @@ export function useClassApp() {
       if (name === "chat") {
         const ch =
           typeof rawChatId === "string" ? decodeURIComponent(rawChatId) : "";
+        const chChanged = activeThreadChannel.value !== ch;
         activeThreadChannel.value = ch;
         const t = sortedThreads.value.find((x) => x.value.channel === ch);
-        activeThreadTitle.value = t ? threadTopicDisplay(t) : "";
+        const nextTitle = t ? threadTopicDisplay(t) : "";
+        if (chChanged || activeThreadTitle.value !== nextTitle) {
+          activeThreadTitle.value = nextTitle;
+        }
         const list = allowedListFromThread(t);
-        activeThreadAllowed.value =
+        const nextAllowed =
           Array.isArray(list) && list.length ? [...list] : null;
+        if (
+          chChanged ||
+          !sameActorIdList(activeThreadAllowed.value, nextAllowed)
+        ) {
+          activeThreadAllowed.value = nextAllowed;
+        }
         view.value = "thread";
         return;
       }
-      view.value = "home";
+      view.value = "myThreads";
       clearActiveThread();
     },
     { immediate: true },
@@ -430,10 +515,73 @@ export function useClassApp() {
   const newOptionalMessage = ref("");
   const createThreadError = ref("");
 
+  const {
+    objects: memberProfileObjects,
+    isFirstPoll: createInviteProfilesLoading,
+  } = useGraffitiDiscover(
+    () => [MEMBER_PROFILE_CHANNEL],
+    memberProfileDiscoverSchema,
+    session,
+    false,
+  );
+
+  const latestMemberProfileByActor = computed(() => {
+    const m = new Map();
+    for (const o of memberProfileObjects.value) {
+      const aid = actorId(o.actor);
+      if (!aid) continue;
+      const prev = m.get(aid);
+      if (!prev || o.value.published > prev.value.published) m.set(aid, o);
+    }
+    return m;
+  });
+
+  const studyBuddyInviteCount = computed(() => {
+    const s = session.value;
+    if (!s) return 0;
+    const me = actorId(s.actor);
+    let n = 0;
+    for (const [aid, o] of latestMemberProfileByActor.value) {
+      if (aid === me) continue;
+      if (o.value?.openToStudyTogether) n++;
+    }
+    return n;
+  });
+
+  const questionBuddyInviteCount = computed(() => {
+    const s = session.value;
+    if (!s) return 0;
+    const me = actorId(s.actor);
+    let n = 0;
+    for (const [aid, o] of latestMemberProfileByActor.value) {
+      if (aid === me) continue;
+      if (o.value?.openToAnswerQuestions) n++;
+    }
+    return n;
+  });
+
+  /** Actor URL strings for classmates whose latest profile matches `pref` (excludes self). */
+  function collectPreferenceActorUrls(pref) {
+    const s = session.value;
+    if (!s) return [];
+    const me = actorId(s.actor);
+    const urls = [];
+    for (const [aid, o] of latestMemberProfileByActor.value) {
+      if (aid === me) continue;
+      if (pref === "study" && !o.value?.openToStudyTogether) continue;
+      if (pref === "questions" && !o.value?.openToAnswerQuestions) continue;
+      urls.push(aid);
+    }
+    return urls;
+  }
+
+  const newQuickAddGroup = ref("study");
+
   watch(
     () => newPrivacy.value,
     (p) => {
       if (p === "private") newTopic.value = "";
+      if (p === "everyone" || p === "quickAdd") newInvites.value = "";
     },
   );
   const creating = ref(false);
@@ -568,12 +716,36 @@ export function useClassApp() {
     return rows.toSorted((a, b) => a.value.published - b.value.published);
   });
 
+  /** Invite list only (same as private threads) — avoids join-stream churn in the UI. */
+  const threadParticipants = computed(() => {
+    const allowed = activeThreadAllowed.value;
+    if (!Array.isArray(allowed) || !allowed.length) return [];
+    const s = session.value;
+    const me = s ? actorId(s.actor) : "";
+    const ids = [
+      ...new Set(allowed.map((x) => String(x).trim()).filter(Boolean)),
+    ];
+    ids.sort((a, b) => {
+      if (a === me) return -1;
+      if (b === me) return 1;
+      return a.localeCompare(b);
+    });
+    return ids.map((id) => ({ actor: id, id }));
+  });
+
+  const threadParticipantsPanelVisible = computed(
+    () => threadParticipants.value.length > 0,
+  );
+
   // routing functions
   function goHome() {
-    router.push({ name: "home" });
+    router.push({ name: "myThreads" });
   }
   function goMyThreads() {
     router.push({ name: "myThreads" });
+  }
+  function goClassThreads() {
+    router.push({ name: "classThreads" });
   }
   function goCreate() {
     router.push({ name: "create" });
@@ -614,6 +786,8 @@ export function useClassApp() {
   function normalizeInviteHandleForLookup(input) {
     let h = String(input).trim().replace(/^@/, "");
     if (!h) return "";
+    // Graffiti may use did:… strings as actor ids; never treat them as short handles.
+    if (/^did:/i.test(h)) return h;
     if (/^https?:\/\//i.test(h)) return h;
     if (h.toLowerCase().endsWith(GRAFFITI_ACTOR_SUFFIX)) return h;
     return `${h}${GRAFFITI_ACTOR_SUFFIX}`;
@@ -668,7 +842,21 @@ export function useClassApp() {
     const me = actorId(s.actor);
     ids.add(me);
     for (const raw of handleStrings) {
-      const h = normalizeInviteHandleForLookup(raw);
+      const trimmed = String(raw).trim();
+      if (!trimmed) continue;
+      // Profile objects and some APIs use did:… ids; handleToActor is for handles / actor URLs only.
+      if (/^did:/i.test(trimmed)) {
+        const id = actorId(trimmed);
+        if (!id) {
+          errors.push(`${raw}: could not resolve`);
+          continue;
+        }
+        if (ids.has(id)) continue;
+        ids.add(id);
+        actors.push(trimmed);
+        continue;
+      }
+      const h = normalizeInviteHandleForLookup(trimmed);
       if (!h) continue;
       try {
         const actor = await graffiti.handleToActor(h);
@@ -750,7 +938,7 @@ export function useClassApp() {
     return allowedListFromThread(t);
   }
 
-  // leave a thread: add public leave line, drop private join, go to home
+  // leave a thread: add public leave line, drop private join, go to my threads
   async function leaveThreadByChannel(ch, threadObj) {
     if (!ch || !session.value) return;
     const t =
@@ -875,29 +1063,54 @@ export function useClassApp() {
   async function createThread() {
     if (!session.value) return;
     createThreadError.value = "";
-    const isPrivate = newPrivacy.value === "private";
-    if (!isPrivate && !newTopic.value.trim()) return;
-    const inviteParts = newInvites.value
-      .split(/[\n,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const mode = newPrivacy.value;
+    const isEveryone = mode === "everyone";
+    const isPrivateManual = mode === "private";
+    const isQuickAdd = mode === "quickAdd";
 
-    if (isPrivate && inviteParts.length === 0) {
+    if (isEveryone && !newTopic.value.trim()) return;
+    if (isQuickAdd && !newTopic.value.trim()) return;
+
+    let inviteParts;
+    if (isQuickAdd) {
+      const g = newQuickAddGroup.value;
+      if (g !== "study" && g !== "questions") {
+        createThreadError.value =
+          "Choose who to invite using the profile-based options.";
+        return;
+      }
+      inviteParts = collectPreferenceActorUrls(g);
+      if (inviteParts.length === 0) {
+        createThreadError.value =
+          "No classmates match that profile option yet. Ask them to save their profile, or use private invites instead.";
+        return;
+      }
+    } else {
+      inviteParts = newInvites.value
+        .split(/[\n,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+
+    if (isPrivateManual && inviteParts.length === 0) {
       createThreadError.value =
         "Add at least one invite (handle or actor URL) for a private thread.";
       return;
     }
 
+    const isInviteOnly = isPrivateManual || isQuickAdd;
+
     creating.value = true;
     try {
-      const titleText = isPrivate
-        ? privateThreadTitleFromInviteParts(inviteParts)
-        : newTopic.value.trim();
+      const titleText =
+        isEveryone || isQuickAdd
+          ? newTopic.value.trim().slice(0, THREAD_TOPIC_MAX_CHARS)
+          : privateThreadTitleFromInviteParts(inviteParts);
       const optionalText = newOptionalMessage.value.trim();
       const threadChannel = crypto.randomUUID();
 
       let allowedActorIds;
-      if (isPrivate) {
+      if (isInviteOnly) {
         const { actors, errors } = await resolveInviteHandles(inviteParts);
         if (errors.length) {
           createThreadError.value = errors.join(" ");
@@ -921,7 +1134,7 @@ export function useClassApp() {
         published: Date.now(),
       };
       if (optionalText) createValue.snippet = optionalText;
-      if (isPrivate) {
+      if (isInviteOnly) {
         createValue.privacy = "private";
         createValue.invitedActors = allowedActorIds;
       }
@@ -954,14 +1167,15 @@ export function useClassApp() {
       newTopic.value = "";
       newOptionalMessage.value = "";
       newInvites.value = "";
+      newQuickAddGroup.value = "study";
       newPrivacy.value = "everyone";
 
       openThread({
         value: {
           channel: threadChannel,
           title: titleText,
-          privacy: isPrivate ? "private" : undefined,
-          invitedActors: isPrivate ? allowedActorIds : undefined,
+          privacy: isInviteOnly ? "private" : undefined,
+          invitedActors: isInviteOnly ? allowedActorIds : undefined,
         },
         allowed: allowedActorIds,
       });
@@ -1081,11 +1295,16 @@ export function useClassApp() {
     joinedSet,
     isPrivateThread,
     threadTopicDisplay,
+    threadTopicMaxChars: THREAD_TOPIC_MAX_CHARS,
     newTopic,
     newPrivacy,
     newInvites,
+    newQuickAddGroup,
     newOptionalMessage,
     createThreadError,
+    createInviteProfilesLoading,
+    studyBuddyInviteCount,
+    questionBuddyInviteCount,
     creating,
     joining,
     leaving,
@@ -1107,6 +1326,7 @@ export function useClassApp() {
     createThread,
     goCreate,
     goMyThreads,
+    goClassThreads,
     goProfile,
     goProfileForActor,
     createPrivateThreadWithPeer,
@@ -1116,9 +1336,12 @@ export function useClassApp() {
     profilePeerResolveError,
     profilePeerResolving,
     profileSub,
+    profileShellTitle,
     goHome,
     activeThreadChannel,
     activeThreadTitle,
+    threadParticipants,
+    threadParticipantsPanelVisible,
     timeline,
     timelineLoading,
     draft,

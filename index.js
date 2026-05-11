@@ -14,16 +14,12 @@ const AppShell = {
   },
 };
 
-const loadHome = () =>
-  import("./home/index.js").then((m) => m.default());
+const loadHome = () => import("./home/index.js").then((m) => m.default());
 const loadMyThreads = () =>
   import("./my-threads/index.js").then((m) => m.default());
-const loadCreate = () =>
-  import("./create/index.js").then((m) => m.default());
-const loadProfile = () =>
-  import("./profile/index.js").then((m) => m.default());
-const loadChat = () =>
-  import("./chat/index.js").then((m) => m.default());
+const loadCreate = () => import("./create/index.js").then((m) => m.default());
+const loadProfile = () => import("./profile/index.js").then((m) => m.default());
+const loadChat = () => import("./chat/index.js").then((m) => m.default());
 
 const loginPlaceholder = {
   name: "LoginPlaceholder",
@@ -38,11 +34,15 @@ const router = createRouter({
       component: AppShell,
       children: [
         { path: "login", name: "login", component: loginPlaceholder },
-        { path: "", name: "home", component: loadHome },
+        { path: "", name: "myThreads", component: loadMyThreads },
         {
           path: "my-threads",
-          name: "myThreads",
-          component: loadMyThreads,
+          redirect: { name: "myThreads" },
+        },
+        {
+          path: "class-threads",
+          name: "classThreads",
+          component: loadHome,
         },
         { path: "create", name: "create", component: loadCreate },
         { path: "profile", name: "profile", component: loadProfile },

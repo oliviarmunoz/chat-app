@@ -21,7 +21,11 @@
   <body>
     <div id="app">
       <p class="app-loading" aria-busy="true">
-        loading<span class="app-loading__dots" aria-hidden="true"><span class="app-loading__dot">.</span><span class="app-loading__dot">.</span><span class="app-loading__dot">.</span></span>
+        loading<span class="app-loading__dots" aria-hidden="true"
+          ><span class="app-loading__dot">.</span
+          ><span class="app-loading__dot">.</span
+          ><span class="app-loading__dot">.</span></span
+        >
       </p>
     </div>
     <template id="shell-template">
@@ -29,9 +33,7 @@
         class="shell"
         v-if="routeName === 'login' || !$graffitiSession.value"
       >
-        <p class="muted">
-          login to see threads!
-        </p>
+        <p class="muted">login to see threads!</p>
         <button type="button" class="btn primary" @click="$graffiti.login()">
           login
         </button>
@@ -41,28 +43,6 @@
         <header class="top">
           <div class="top-nav">
             <div class="top-left">
-              <button
-                type="button"
-                class="icon-btn icon-btn--toolbar"
-                aria-label="Log out"
-                @click="$graffiti.logout($graffitiSession.value)"
-              >
-                <svg
-                  class="icon-btn__svg"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke-width="1.6"
-                  stroke="currentColor"
-                  aria-hidden="true"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"
-                  />
-                </svg>
-              </button>
               <button
                 type="button"
                 class="icon-btn icon-btn--toolbar"
@@ -88,24 +68,22 @@
             </div>
             <div class="top-title">
               <h1>6.4500 threads</h1>
-              <p v-if="view === 'home'" class="sub">class threads</p>
+              <p v-if="view === 'classThreads'" class="sub">class threads</p>
               <p v-else-if="view === 'create'" class="sub">create new thread</p>
               <p v-else-if="view === 'myThreads'" class="sub">my threads</p>
               <p v-else-if="view === 'profile'" class="sub">
-                {{myDisplayName}} profile
+                {{ profileShellTitle }}
               </p>
               <p v-else-if="view === 'thread'" class="sub sub--thread">
-                <span class="sub--thread__label"
-                  ><strong>topic</strong>:</span
+                <span class="sub--thread__label"><strong>topic</strong>:</span>
+                <span class="sub--thread__topic"
+                  >{{ activeThreadTitle || "thread" }}</span
                 >
-                <span class="sub--thread__topic">{{
-                  activeThreadTitle || "thread"
-                }}</span>
               </p>
             </div>
             <div class="top-right">
               <button
-                v-if="view === 'home' || view === 'myThreads'"
+                v-if="view === 'classThreads' || view === 'myThreads'"
                 type="button"
                 class="icon-btn icon-btn--toolbar"
                 aria-label="Create thread"
@@ -120,40 +98,14 @@
                   stroke="currentColor"
                   aria-hidden="true"
                 >
-                  <path
-                    stroke-linecap="round"
-                    d="M12 4.5v15m7.5-7.5h-15"
-                  />
+                  <path stroke-linecap="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
               </button>
               <button
-                v-if="view === 'home'"
+                v-if="view === 'classThreads' || view === 'profile' || view === 'create' || view === 'thread'"
                 type="button"
                 class="icon-btn icon-btn--toolbar"
                 aria-label="My threads"
-                @click="goMyThreads"
-              >
-                <svg
-                  class="icon-btn__svg"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke-width="1.6"
-                  stroke="currentColor"
-                  aria-hidden="true"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"
-                  />
-                </svg>
-              </button>
-              <button
-                v-if="view !== 'home'"
-                type="button"
-                class="icon-btn icon-btn--toolbar"
-                aria-label="Class threads"
                 @click="goHome"
               >
                 <svg
@@ -169,6 +121,34 @@
                     stroke-linecap="round"
                     stroke-linejoin="round"
                     d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"
+                  />
+                </svg>
+              </button>
+              <button
+                v-if="view !== 'classThreads' && view !== 'profile' && view !== 'create' && view !== 'thread'"
+                type="button"
+                class="icon-btn icon-btn--toolbar"
+                aria-label="Browse class threads"
+                @click="goClassThreads"
+              >
+                <svg
+                  class="icon-btn__svg"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="1.6"
+                  stroke="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.59 50.59 0 0 0-2.658-.813A59.895 59.895 0 0 1 12 3.493a59.895 59.895 0 0 1 10.399 5.84 60.06 60.06 0 0 0-2.658.814m-15.482 0A50.617 50.617 0 0 1 12 13.489a50.702 50.702 0 0 1 7.83-3.24"
+                  />
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M12 20.25v-8.911"
                   />
                 </svg>
               </button>

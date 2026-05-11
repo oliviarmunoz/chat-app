@@ -8,11 +8,12 @@
   </p>
   <template v-else>
     <section class="band band--mine">
+      <h2>welcome, {{ myDisplayName }}!</h2>
       <p v-if="!joinedThreads.length" class="muted">
         <template v-if="!allThreads.length">no class threads yet.</template>
         <template v-else>
           you haven't joined any threads.
-          <button type="button" class="linkish" @click="goHome">
+          <button type="button" class="linkish" @click="goClassThreads">
             browse class threads
           </button>
         </template>
@@ -21,7 +22,10 @@
         <li v-for="t in joinedThreads" :key="t.url" class="card card--mine">
           <div class="card-body">
             <div class="topic">
-              {{ threadTopicDisplay(t) }}
+              <span
+                class="topic__text"
+                :title="threadTopicDisplay(t)"
+                >{{ threadTopicDisplay(t) }}</span>
               <span v-if="isPrivateThread(t)" class="badge-private"
                 >private thread</span
               >
@@ -34,13 +38,7 @@
                 :display-name="myDisplayName"
               ></actor-name>
             </div>
-            <p
-              v-if="previewTextForThread(t)"
-              class="preview"
-              :title="previewTextForThread(t)"
-            >
-              “{{ previewTextForThread(t) }}”
-            </p>
+            <thread-card-preview :thread="t"></thread-card-preview>
           </div>
           <div class="card-actions">
             <button type="button" class="btn small primary" @click="openThread(t)">
@@ -57,7 +55,7 @@
           unjoinedThreads.length !== 1 ? "s" : ""
         }}
         you haven't joined —
-        <button type="button" class="linkish" @click="goHome">browse</button>
+        <button type="button" class="linkish" @click="goClassThreads">browse</button>
       </p>
     </section>
   </template>

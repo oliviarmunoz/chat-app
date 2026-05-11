@@ -12,37 +12,14 @@ import {
   useGraffitiSession,
   useGraffitiDiscover,
 } from "@graffiti-garden/wrapper-vue";
-
-const PROFILE_CHANNEL = "mit:class:6.4500:profiles"; // only supporting one class for now
-
-const memberProfileSchema = {
-  properties: {
-    value: {
-      required: [
-        "activity",
-        "type",
-        "classId",
-        "published",
-        "availability",
-        "openToStudyTogether",
-        "openToAnswerQuestions",
-      ],
-      properties: {
-        activity: { const: "Update" },
-        type: { const: "MemberProfile" },
-        classId: { const: "6.4500" },
-        availability: { type: "string" },
-        openToStudyTogether: { type: "boolean" },
-        openToAnswerQuestions: { type: "boolean" },
-        published: { type: "number" },
-      },
-    },
-  },
-};
+import {
+  MEMBER_PROFILE_CHANNEL,
+  memberProfileDiscoverSchema,
+} from "../profile-discover.js";
 
 function actorId(actor) {
   if (actor == null) return "";
-  return typeof actor === "string" ? actor : actor.url ?? "";
+  return typeof actor === "string" ? actor : (actor.url ?? "");
 }
 
 const GRAFFITI_ACTOR_SUFFIX = ".graffiti.actor";
@@ -90,12 +67,17 @@ export const ProfileView = defineComponent({
     const session = useGraffitiSession();
     const router = useRouter();
     const classApp = inject("classApp", null);
-    const profileChannels = () => [PROFILE_CHANNEL];
+    const profileChannels = () => [MEMBER_PROFILE_CHANNEL];
     const { objects: profileObjects, isFirstPoll: profilesLoading } =
-      useGraffitiDiscover(profileChannels, memberProfileSchema, session, false);
+      useGraffitiDiscover(
+        profileChannels,
+        memberProfileDiscoverSchema,
+        session,
+        false,
+      );
 
     const myActorId = computed(() =>
-      session.value ? actorId(session.value.actor) : ""
+      session.value ? actorId(session.value.actor) : "",
     );
 
     const myLatestProfile = computed(() => {
@@ -105,7 +87,7 @@ export const ProfileView = defineComponent({
       const mine = profileObjects.value.filter((o) => actorId(o.actor) === me);
       if (!mine.length) return null;
       return mine.reduce((a, b) =>
-        a.value.published >= b.value.published ? a : b
+        a.value.published >= b.value.published ? a : b,
       );
     });
 
@@ -113,18 +95,18 @@ export const ProfileView = defineComponent({
       () =>
         !!props.peerActorId &&
         props.peerActorId !== myActorId.value &&
-        !props.peerResolveError
+        !props.peerResolveError,
     );
 
     const peerLatestProfile = computed(() => {
       if (!isViewingClassmate.value) return null;
       const pid = props.peerActorId;
       const theirs = profileObjects.value.filter(
-        (o) => actorId(o.actor) === pid
+        (o) => actorId(o.actor) === pid,
       );
       if (!theirs.length) return null;
       return theirs.reduce((a, b) =>
-        a.value.published >= b.value.published ? a : b
+        a.value.published >= b.value.published ? a : b,
       );
     });
 
@@ -177,7 +159,7 @@ export const ProfileView = defineComponent({
         openToStudyTogether.value = !!obj.value.openToStudyTogether;
         openToAnswerQuestions.value = !!obj.value.openToAnswerQuestions;
       },
-      { immediate: true }
+      { immediate: true },
     );
 
     const classmateRows = computed(() => {
@@ -194,7 +176,7 @@ export const ProfileView = defineComponent({
         }
       }
       return [...byActor.values()].toSorted(
-        (a, b) => b.value.published - a.value.published
+        (a, b) => b.value.published - a.value.published,
       );
     });
 
@@ -202,6 +184,37 @@ export const ProfileView = defineComponent({
       if (!classApp?.createPrivateThreadWithPeer || !props.peerActorId) return;
       void classApp.createPrivateThreadWithPeer(props.peerActorId);
     }
+
+    const logoutConfirmOpen = ref(false);
+    const logoutInProgress = ref(false);
+
+    function openLogoutConfirm() {
+      logoutConfirmOpen.value = true;
+    }
+
+    function cancelLogoutConfirm() {
+      if (logoutInProgress.value) return;
+      logoutConfirmOpen.value = false;
+    }
+
+    async function confirmLogout() {
+      const s = session.value;
+      if (!s) {
+        logoutConfirmOpen.value = false;
+        return;
+      }
+      logoutInProgress.value = true;
+      try {
+        await graffiti.logout(s);
+      } finally {
+        logoutInProgress.value = false;
+        logoutConfirmOpen.value = false;
+      }
+    }
+
+    watch(isViewingClassmate, (viewingPeer) => {
+      if (viewingPeer) logoutConfirmOpen.value = false;
+    });
 
     async function saveProfile() {
       const s = session.value;
@@ -225,9 +238,9 @@ export const ProfileView = defineComponent({
               openToAnswerQuestions: openToAnswerQuestions.value,
               published: Date.now(),
             },
-            channels: [PROFILE_CHANNEL],
+            channels: [MEMBER_PROFILE_CHANNEL],
           },
-          s
+          s,
         );
         if (classApp?.myDisplayName && classApp.persistMyDisplayName) {
           classApp.myDisplayName.value = displayNameDraft.value;
@@ -262,6 +275,11 @@ export const ProfileView = defineComponent({
       startPrivateThreadWithPeer,
       peerDmBusy: classApp?.peerDmBusy ?? ref(false),
       peerDmError: classApp?.peerDmError ?? ref(""),
+      logoutConfirmOpen,
+      logoutInProgress,
+      openLogoutConfirm,
+      cancelLogoutConfirm,
+      confirmLogout,
     };
   },
   template: `
@@ -275,15 +293,15 @@ export const ProfileView = defineComponent({
             <graffiti-actor-to-handle :actor="peerLatestProfile ? peerLatestProfile.actor : peerActorId" />
           </div>
           <template v-if="peerLatestProfile">
-            <p v-if="peerLatestProfile.value.availability" class="profile-peer-avail">{{ peerLatestProfile.value.availability }}</p>
-            <p v-else class="muted profile-peer-empty">No availability text.</p>
+            <p v-if="peerLatestProfile.value.availability" class="profile-peer-avail">available {{ peerLatestProfile.value.availability }}</p>
+            <p v-else class="muted profile-peer-empty">no availability set.</p>
             <div class="profile-peer-tags">
-              <span v-if="peerLatestProfile.value.openToStudyTogether" class="profile-tag">Study together</span>
-              <span v-if="peerLatestProfile.value.openToAnswerQuestions" class="profile-tag">Questions</span>
-              <span v-if="!peerLatestProfile.value.openToStudyTogether && !peerLatestProfile.value.openToAnswerQuestions" class="muted">Not set</span>
+              <span v-if="peerLatestProfile.value.openToStudyTogether" class="profile-tag">study together</span>
+              <span v-if="peerLatestProfile.value.openToAnswerQuestions" class="profile-tag">answer questions</span>
+              <span v-if="!peerLatestProfile.value.openToStudyTogether && !peerLatestProfile.value.openToAnswerQuestions" class="muted">not set</span>
             </div>
           </template>
-          <p v-else class="muted profile-peer-empty">No profile set!</p>
+          <p v-else class="muted profile-peer-empty">no profile set!</p>
           <p v-if="peerDmError" class="create-error profile-peer-dm-error">{{ peerDmError }}</p>
           <div class="form-actions profile-peer-dm-actions">
             <button
@@ -348,6 +366,63 @@ export const ProfileView = defineComponent({
           </div>
         </div>
       </template>
+      <footer
+        v-if="!peerResolving && !isViewingClassmate"
+        class="profile-account-footer"
+      >
+        <div class="profile-account-footer__inner form-card">
+          <h2 class="profile-card-title">account</h2>
+          <p class="muted profile-account-footer__hint">
+            sign out on this device. you can log in again any time.
+          </p>
+          <button
+            type="button"
+            class="btn danger profile-account-footer__btn"
+            @click="openLogoutConfirm"
+          >
+            log out
+          </button>
+        </div>
+      </footer>
+      <div
+        v-if="logoutConfirmOpen && !isViewingClassmate"
+        class="confirm-backdrop"
+        role="presentation"
+        @click.self="cancelLogoutConfirm"
+      >
+        <div
+          class="confirm-dialog form-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-logout-title"
+          aria-describedby="confirm-logout-desc"
+        >
+          <p id="confirm-logout-title" class="confirm-dialog__title">
+            log out?
+          </p>
+          <p id="confirm-logout-desc" class="muted confirm-dialog__hint">
+            you will leave your threads until you sign in again.
+          </p>
+          <div class="form-actions confirm-dialog__actions">
+            <button
+              type="button"
+              class="btn muted-btn"
+              :disabled="logoutInProgress"
+              @click="cancelLogoutConfirm"
+            >
+              cancel
+            </button>
+            <button
+              type="button"
+              class="btn danger"
+              :disabled="logoutInProgress"
+              @click="confirmLogout"
+            >
+              {{ logoutInProgress ? "logging out..." : "log out" }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   `,
 });

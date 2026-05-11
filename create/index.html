@@ -3,25 +3,28 @@
     <label class="field privacy-field">
       <div class="privacy-field__row">
         <div class="privacy-field__label-row">
-          <span class="field-label-with-tip">privacy settings</span>
+          <span class="field-label-with-tip">thread type</span>
           <span class="field-tip">
             <button
               type="button"
               class="field-tip__btn"
-              aria-label="Privacy: Public threads are listed for the whole class—choose a topic and anyone can join and post. Private threads are only visible to you and the Graffiti handles you invite; only those people can see or post."
+              aria-label="Thread types: Public is listed for the whole class with a topic. Private is invite-only by handle. Quick add is a private group built from classmates’ profile toggles (open to study or open to questions), with a topic you choose."
             >
               ?
             </button>
           </span>
           <span class="field-tip__bubble">
-            <strong>public</strong> — shown in the class thread list with your topic. anyone in the class can open it and post.<br /><br />
-            <strong>private</strong> — not shown in the class thread list. only you and the people you invite can see or post; others will not see this thread.
+            <strong>public</strong> — listed in the class thread list with your
+            topic. anyone in the class can open it and post.<br /><br />
+            <strong>private</strong> — only you and the handles you type below can see or post in this thread.<br /><br />
+            <strong>quick add</strong> — quickly create a private group thread from classmates’ profile preferences (open to study or open to answer questions).
           </span>
         </div>
       </div>
       <select v-model="newPrivacy">
         <option value="everyone">public</option>
         <option value="private">private</option>
+        <option value="quickAdd">quick add</option>
       </select>
     </label>
     <label v-if="newPrivacy === 'everyone'" class="field">
@@ -29,6 +32,7 @@
       <input
         v-model="newTopic"
         type="text"
+        :maxlength="threadTopicMaxChars"
         placeholder="set a topic for the thread"
       />
     </label>
@@ -40,6 +44,36 @@
         placeholder="graffiti handles, one per line or comma-separated"
       ></textarea>
     </label>
+    <template v-if="newPrivacy === 'quickAdd'">
+      <label class="field">
+        <span>invite from profiles:</span>
+        <select v-model="newQuickAddGroup">
+          <option value="study">
+            everyone open to study ({{ studyBuddyInviteCount }})
+          </option>
+          <option value="questions">
+            everyone open to questions ({{ questionBuddyInviteCount }})
+          </option>
+        </select>
+      </label>
+      <label class="field">
+        <span>topic:</span>
+        <input
+          v-model="newTopic"
+          type="text"
+          :maxlength="threadTopicMaxChars"
+          placeholder="name this group thread (shown to invitees)"
+        />
+      </label>
+      <div class="invite-quick-add" aria-live="polite">
+        <p
+          v-if="createInviteProfilesLoading"
+          class="invite-quick-add__hint muted"
+        >
+          loading profiles…
+        </p>
+      </div>
+    </template>
     <p v-if="createThreadError" class="create-error">{{ createThreadError }}</p>
     <label class="field">
       <span>message (optional):</span>
@@ -56,7 +90,12 @@
       :disabled="
         creating ||
         (newPrivacy === 'everyone' && !newTopic.trim()) ||
-        (newPrivacy === 'private' && !newInvites.trim())
+        (newPrivacy === 'private' && !newInvites.trim()) ||
+        (newPrivacy === 'quickAdd' &&
+          (!newTopic.trim() ||
+            createInviteProfilesLoading ||
+            (newQuickAddGroup === 'study' && studyBuddyInviteCount === 0) ||
+            (newQuickAddGroup === 'questions' && questionBuddyInviteCount === 0)))
       "
       @click="createThread"
     >
